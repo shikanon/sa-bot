@@ -16,6 +16,11 @@ from typing import (
     Optional,
 )
 
+from langchain.callbacks.manager import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
+
 from retrying import retry
 from volcengine.maas import MaasService, MaasException, ChatRole
 from volcengine.maas.models.api.api_pb2 import ChatResp
@@ -106,7 +111,7 @@ class ChatSkylark(BaseChatModel):
         return ChatResult(generations=generations, llm_output=llm_output)
 
     def completion_with_retry(
-        self, **kwargs: Any
+        self, run_manager: Optional[AsyncCallbackManagerForLLMRun] = None, **kwargs: Any
     ) -> Any:
 
         @retry(stop_max_attempt_number=3)
@@ -127,6 +132,7 @@ class ChatSkylark(BaseChatModel):
         self,
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
         stream: Optional[bool] = None,
         **kwargs: Any,
     ) -> ChatResult:
@@ -147,11 +153,18 @@ class ChatSkylark(BaseChatModel):
         response = self.completion_with_retry(req=params)
         # convert ChatResp to dict
         assert isinstance(response, ChatResp)
+        # 由于豆包还未实现stop命令，手动实现stop命令
+        content = response.choice.message.content
+        if stop:
+            for s in stop:
+                if s in content:
+                    content = content.split(s)[0] + s
+
         response_dict = {
             "choice": {
                 "message": {
                     "role": response.choice.message.role,
-                    "content": response.choice.message.content
+                    "content": content
                 },
                 "finish_reason": response.choice.finish_reason,
             },
