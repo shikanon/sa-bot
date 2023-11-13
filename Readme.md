@@ -163,7 +163,7 @@ print(response) #json解析后已经满足json格式
 {'action': 'Recommend product', 'action_input': {'user_demographic': {'age': 25, 'gender': 'Male', 'location': 'New York'}, 'preferences': {'style': 'Casual', 'color': 'Blue'}}}
 ```
 
-**将skylark放入langchain中测试agent**
+**将 skylark 接入 langchain 中测试 agent**
 
 编写工具函数：
 ```python
@@ -211,4 +211,18 @@ Observation:  黑色连衣裙
 Thought: 根据推荐的结果，我选择了黑色连衣裙。
 
 Final Answer: 黑色连衣裙
+```
+
+
+Tips:
+
+Volcengine 在 windows 下安装出错：
+```
+OSError: Cannot load native module 'Crypto.Cipher._raw_ecb': Trying '_raw_ecb.cp311-win_amd64.pyd': cannot load library 'C:\Users\Admin\AppData\Local\Programs\Python\Python311\Lib\site-packages\Crypto\Util\..\Cipher\_raw_ecb.cp311-win_amd64.pyd': error 0xc1, Trying '_raw_ecb.pyd': cannot load library
+```
+
+可以尝试：
+```
+pip3 uninstall pycryptodomex
+pip install pycryptodome
 ```

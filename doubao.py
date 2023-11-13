@@ -23,7 +23,6 @@ from langchain.callbacks.manager import (
 
 from retrying import retry
 from volcengine.maas import MaasService, MaasException, ChatRole
-from volcengine.maas.models.api.api_pb2 import ChatResp
 from langchain.adapters.openai import convert_dict_to_message, convert_message_to_dict
 
 from langchain.chat_models.base import BaseChatModel
@@ -151,8 +150,6 @@ class ChatSkylark(BaseChatModel):
         # 将统一的message转换为maas处理的参数
         params = self._create_message_dicts(messages)
         response = self.completion_with_retry(req=params)
-        # convert ChatResp to dict
-        assert isinstance(response, ChatResp)
         # 由于豆包还未实现stop命令，手动实现stop命令
         content = response.choice.message.content
         if stop:

@@ -98,7 +98,7 @@ def print_decorator(text: str):
 @print_decorator("模拟agent判断选择：")
 def test_choice():
     # 模拟agent选择题
-    chat = doubao.ChatSkylark(model="skylark-chat",temperature=0,top_p=0,top_k=1)
+    chat = doubao.ChatSkylark(model="skylark-chat",top_k=1)
     question="我想卖一件衣服，但不知道哪款适合我，有什么好推荐吗"
     messages = [
         HumanMessagePromptTemplate.from_template(
@@ -112,7 +112,7 @@ def test_choice():
 @print_decorator("模拟agent对工具的选择：")
 def test_choice_tools():
     # 模拟选择工具
-    chat = doubao.ChatSkylark(model="skylark-chat",temperature=0,top_p=0,top_k=1)
+    chat = doubao.ChatSkylark(model="skylark-chat",top_k=1)
     choice_chain = LLMChain(llm=chat,prompt=PromptTemplate(template=multi_choice_tools_prompt,input_variables=["question"]),output_key="answer")
     question_1 = "我有一张订单，一直没收到，可以帮我查询下吗"
     result = choice_chain(question_1)
@@ -130,7 +130,7 @@ def test_choice_tools():
 # 模拟agent prompt生成答案
 @print_decorator("模拟agent规划、选择：")
 def test_agent_prompt():
-    chat = doubao.ChatSkylark(model="skylark-chat",temperature=0,top_p=1,top_k=1)
+    chat = doubao.ChatSkylark(model="skylark-chat",top_k=1)
     question="我想卖一件衣服，但不知道哪款适合我，有什么好推荐吗"
     messages = [
         HumanMessagePromptTemplate.from_template(
@@ -151,15 +151,15 @@ def test_agent_prompt():
 
 # 模拟电商订单
 def search_order(input: str)->str:
-    print("调用search_order：一个能够查询订单信息，获得最新的订单情况的工具:")
+    print("你需要调用search_order，一个能够查询订单信息，获得最新的订单情况的工具。")
     return "{order}，订单状态：已发货".format(order=input)
 
 # 模拟商品推荐
 def recommend_product(input: str)->str:
-    print("调用recommend_product：一个能够基于商品及用户信息为用户进行商品推荐导购的工具:")
+    print("你需要调用recommend_product，一个能够基于商品及用户信息为用户进行商品推荐导购的工具。")
     return "黑色连衣裙"
 
-@print_decorator("模拟agent全流程(thought、plan、action)：")
+@print_decorator("模拟agent全流程(thought、action、observation)：")
 def test_agent():
     tools = [
         Tool(
@@ -174,9 +174,11 @@ def test_agent():
         )
     ]
 
-    chat = doubao.ChatSkylark(model="skylark-chat",temperature=0,top_p=0,top_k=1)
-    agent_tools = initialize_agent(tools=tools, llm=chat, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
-    result = agent_tools.run("我想卖一件衣服，但不知道哪款适合我，有什么好推荐吗")
+    chat = doubao.ChatSkylark(model="skylark-chat",top_k=1)
+    agent_tools = initialize_agent(tools=tools, llm=chat, agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION, verbose=True,agent_kwargs={"handle_parsing_errors": True})
+    user_question = "我想卖一件衣服，但不知道哪款适合我，有什么好推荐吗"
+    print("用户问题：%s "%user_question)
+    result = agent_tools.run(user_question)
     print(result)
 
 
