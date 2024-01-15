@@ -2,9 +2,43 @@
 
 - 实现将豆包(云雀大模型)接入langchain体系
 - 基于langchain测试skylark-chat的prompt agent
-
+- 云雀模型 function call 案例
+- 云雀模型 chat bot 案例
 
 ## Case
+
+### 跑一个简单的Chatbot demo
+
+运行 chatbot demo:
+```
+export VOLC_ACCESSKEY="xxxxxxxxxx"
+export VOLC_SECRETKEY="xxxxxxxxxxxxx"
+export ES_URL="http://<用户名>:<密码>@<域名>:<端口号>"
+python chatbot.py
+```
+
+### 知识库
+
+使用 es-knn 作为向量数据库，使用 bge-large-zh 作为 embedding 模型，示例代码：
+```python
+es_url = os.environ.get("ES_URL")
+es_table = "knowledge"
+emb = knowledge.MaaSKnowledgeEmbedding(model="bge-large-zh", model_version="1.0")
+db = knowledge.ESKnnVectorDB(es_url, es_table, emb)
+```
+
+知识库写入：
+```python
+with open("Readme.md", "r", encoding="utf-8") as fr:
+    doc = fr.read()
+kg_unit = doc.split("/n")
+db.bulk_insert(kg_unit)
+```
+
+知识库读取：
+```python
+value = db.query("如何使用 es 作为知识库?")
+```
 
 ### Agent
 

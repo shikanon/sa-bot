@@ -42,8 +42,42 @@ from langchain.schema.messages import (
 from langchain.schema.output import ChatGenerationChunk
 from langchain.utils import get_from_dict_or_env, get_pydantic_field_names
 
+class ModelFunctionClass:
+    def __init__(self, name=None, description=None, parameters=None):
+        """
+        name: 回调函数的名称，会用于做function call 的意图识别
+        description: 回调函数的功能描述，和name一样用于做function call 的意图识别
+        parameters: 字典，函数的参数，参数如下：
+        "parameters": 
+        {
+            "properties": 
+            {
+                "query": {"description": "表示用戶输入查询实体", "type":"string"}},
+                "required": ["query"],"type": "object",
+            },
+            # 调用调用示用示例示例
+            "examples": ['{"query": "最近3天看过的文档"}'],
+        }
+        """
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+
+    def todict(self) -> Dict:
+        if self.name is None or self.description is None:
+            raise ValueError("invaild vale, name and description cannot be null")
+        result = {
+            "name": self.name,
+            "description": self.description,
+        }
+        if self.parameters is not None:
+            result["parameters"] = self.parameters
+        return result
+
 class ChatSkylark(BaseChatModel):
     model_name: str = Field(default="skylark-chat", alias="model")
+    model_version: str
+    model_endpoint: str
     """VOLC_ACCESSKEY"""
     model_ak: Optional[str] = None
     """VOLC_SECRETKEY"""
@@ -58,6 +92,10 @@ class ChatSkylark(BaseChatModel):
     top_k: Optional[int] = None
     maas: MaasService = MaasService('maas-api.ml-platform-cn-beijing.volces.com', 'cn-beijing')
     streaming: bool = False
+    """plugins: 支持头条搜索插件，[browsing]"""
+    plugins: Optional[str] = None
+    """functions: 自定义第三方函数回调"""
+    functions: Optional[List] = None
 
     @property
     def _llm_type(self) -> str:
@@ -94,6 +132,12 @@ class ChatSkylark(BaseChatModel):
             },
             "messages": messages_list
         }
+        if len(self.functions) >0 :
+            req["functions"] = self.functions
+        if self.model_version is not None:
+            req["model"]["version"] = self.model_version
+        if self.model_endpoint is not None:
+            req["model"]["endpoint_id"] = self.model_endpoint
         return req
 
     def _create_chat_result(self, response: Mapping[str, Any]) -> ChatResult:
@@ -156,12 +200,12 @@ class ChatSkylark(BaseChatModel):
             for s in stop:
                 if s in content:
                     content = content.split(s)[0] + s
-
         response_dict = {
             "choice": {
                 "message": {
                     "role": response.choice.message.role,
-                    "content": content
+                    "content": content,
+                    "function_call": response.choice.message.function_call,
                 },
                 "finish_reason": response.choice.finish_reason,
             },
