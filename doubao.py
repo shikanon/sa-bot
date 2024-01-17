@@ -26,7 +26,6 @@ from volcengine.maas import MaasService, MaasException, ChatRole
 from langchain.adapters.openai import convert_dict_to_message, convert_message_to_dict
 
 from langchain.chat_models.base import BaseChatModel
-from langchain.llms.base import create_base_retry_decorator
 from langchain.pydantic_v1 import Field, root_validator
 from langchain.schema import ChatGeneration, ChatResult
 from langchain.schema import AIMessage, HumanMessage, ChatMessage, SystemMessage

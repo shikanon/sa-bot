@@ -1,3 +1,4 @@
+# coding:utf-8
 """
 doubao chat wrapper.
 author: shikanon
@@ -5,9 +6,10 @@ create: 2024/1/8
 """
 import json
 import os
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, WebSocket
 from pydantic import BaseModel
 from typing import Optional, List, Tuple
+from langchain.pydantic_v1 import Field
 from fastapi.responses import PlainTextResponse
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 from langchain.prompts.chat import HumanMessagePromptTemplate
@@ -22,7 +24,7 @@ debuglog = logger.DebugLogger("chat bot web")
 
 # 知识库初始化
 emb = knowledge.MaaSKnowledgeEmbedding(model="bge-large-zh", model_version="1.0")
-kg_db = knowledge.ESKnnVectorDB(os.environ.get("ES_URL"), "knowledge", emb)
+kg_db = knowledge.ESKnnVectorDB(os.environ.get("ES_URL"), emb)
 
 # 回调函数类
 fn = doubao.ModelFunctionClass(
@@ -77,19 +79,47 @@ character_prompt_template = """## Character
 class QuestionRequest(BaseModel):
     '''
     question: 问题，文本格式
+    question_type: 问题类型，文本格式
     history_messages: 采用问题答案对[("问题1":"答案"),("问题2":"答案"),("问题3":"答案")]
+    session_id: 会话id，整形，用来缺乏是否同一个会话上下文
     '''
     question: str
+    question_type: str = "knowledge"
     history_messages: List[Tuple[str, str]]
+    session_id: int = 0
+
+class FAQRequest(BaseModel):
+    '''
+    faq_id: 问答的id索引
+    question: 问题
+    answer: 答案
+    faq_type: 类型
+    '''
+    faq_id: str
+    question: str
+    answer: str
+    faq_type: str
+
 
 def get_knowledge_content(req: QuestionRequest):
+    """
+    该函数用于获取知识库的内容，函数采用问题和历史消息构建context_question，然后使用ES进行查询，输出结果最接近问题的内容。
+    
+    输入参数:
+    req: QuestionRequest对象，包含问题，历史消息和问题类型等信息
+    """
     if len(req.history_messages)>0:
-        context_question = req.question + "/n".join([r[0]+r[1] for r in req.history_messages])
+        context_question = "/n".join([r[0]+r[1] for r in req.history_messages]) + req.question
     else:
         context_question = req.question
+    if req.question_type != "knowledge" or req.question_type != "":
+        kg_db.init_db(req.question_type)
+    else:
+        kg_db.init_db("knowledge")
     similar_contents = kg_db.query(context_question)
     similar_content = similar_contents[0]
     debuglog.debug(similar_content)
+    return similar_content
 
 # 知识问答接口
 @app.post("/ask")
@@ -134,6 +164,36 @@ async def ask_question(req: QuestionRequest):
     debuglog.debug(answer)
     return {"question": req.question, "answer": answer, "history": req.history_messages, "context": messages}
 
+# 直接上传FAQ到知识库
+@app.post("/save-faq/")
+async def save_faq(req: FAQRequest):
+    '''该函数用于处理FAQ。
+    faq_id: 问答的id索引
+    question: 问题
+    answer: 答案
+    faq_type: 类型
+    '''
+    # 这里应该是文件内容的解析逻辑
+    content = "question: %s \n\n answer: %s"%(req.question, req.answer)
+    if len(content) > 500:
+        return {"error": "FAQ的内容太长了，大模型context容纳不下"}
+    if req.faq_type != "knowledge" or req.faq_type !="":
+        kg_db.init_db(req.faq_type)
+    else:
+        kg_db.init_db("knowledge")
+    kg_db.insert(id=req.faq_id, text=content)
+    return {"faq_id": req.faq_id, "content": content}
+
+
+@app.delete("/delete-faq-by-id/{faq_id}")
+async def delete_faq_by_id(faq_id:str):
+    try:
+        kg_db.delete_by_id(id=faq_id)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "failed", "error": e}
+
+
 # 文件上传解析接口
 @app.post("/uploadfile/")
 async def upload_file(file: UploadFile = File(...)):
@@ -155,6 +215,14 @@ async def debug_ask_question(req: QuestionRequest):
     debug_info = "这是调试信息的示例。"
     similar_content = get_knowledge_content(req)
     return {"query": similar_content}
+
+# websocket的方式进行回复
+@app.websocket("/ws-chatbot")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")
 
 if __name__ == "__main__":
     import uvicorn

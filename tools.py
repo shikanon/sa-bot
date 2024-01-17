@@ -9,97 +9,102 @@ from typing import Any
 from langchain.agents import initialize_agent, Tool
 from langchain.agents.agent import AgentExecutor
 from langchain.agents.agent_types import AgentType
+from langchain.prompts.chat import (
+    HumanMessagePromptTemplate,
+)
+from langchain.schema import SystemMessage, HumanMessage
 
-class PythonInterpreter:
+fn = doubao.ModelFunctionClass(
+    name="CallHumanCustomerService",
+    description="""当需要转人工服务的时候使用此函数。当你觉得无法很好帮助客户解决问题，
+    需要借助专业人士的力量，你可以使用此函数方法转到的人工客服，这个函数的输入question是你基于上下文总结归纳的用户问题和描述""",
+    parameters={
+        "properties": {
+            "question": {"description": "用户咨询的问题和问题相关的上下文信息", "type":"string"}
+            },
+            "required": ["question"],
+            "type": "object",
+    },
+)
 
-    def get_name(self) -> str:
-        return "Python Interpreter"
-    
-    def get_func(self) -> Any:
-        def func(input_text: str) -> str:
-            print(input_text)
-            code = ""
-            if '```python' in input_text:
-                pattern = re.compile(r"^.*?```(?:python)?(.*?)```.*?$", re.DOTALL)
-                found = pattern.search(input_text)
-                code = found.group(1)
-            elif '```' in input_text:
-                pattern = re.compile(r"^.*?`{3}(.*?)`{3}.*?$", re.DOTALL)
-                found = pattern.search(input_text)
-                code = found.group(1)
-            elif '`' in input_text:
-                pattern = re.compile(r"^.*?`(.*?)`.*?$", re.DOTALL)
-                found = pattern.search(input_text)
-                code = found.group(1)
-            if code != "":
-                try:
-                    function_compile = compile(code,'<string>','exec')
-                    global_variable = {}
-                    exec(__source=function_compile,__globals=global_variable)
-                    if isinstance(global_variable["Solution"],function):
-                        result = global_variable["Solution"]()
-                        return str(result)
-                except Exception as e:
-                    return "Help! Unexpected error: \n%s"%str(e)
-            return "你的输出格式不符合要求，需要遵守以下规则，否则你无法使用 Python Interpreter 这个工具：\
-                (1) 你的代码必须放在```{{code}}```当中 \
-                (2) 你的代码必须使用 Solution 作为函数名称，可以参考我给你的样例"
-        return func
+chat = doubao.ChatSkylark(
+    model="skylark2-pro-4k",
+    model_version="1.100",
+    model_endpoint="mse-20231227193502-58xhk",
+    top_k=1,
+    functions=[fn.todict()]
+    )
 
-    def get_descripte(self) -> str:
-        description = """Python Interpreter 是一个用来执行 Python 代码的工具。你在使用他的时候必须给他输入一个函数字符串，
-函数名必须得是`Solution`，代码对应的是你一步步的思考过程。
+system_prompt = """## Character
+你是一位智能游戏客服，礼貌且善于洞察客户情绪。你的主要职责是帮助客户解决他们在游戏中遇到的问题。
 
-问题：求两数之和，给定一个整数数组 nums 和一个整数目标值 target，请你在该数组中找出和为目标值 target 的那两个整数，并返回它们的数组下标。输入：nums = [2,7,11,15], target = 9, 输出：
+## Skills
+### Skill 1: 洞察客户情绪
+1. 通过用户的反馈和描述，尝试理解客户的情绪。
+2. 你的回复应适配客户的情绪。如客户表现出沮丧，应给予关心和理解；若客户高兴，你应和他们一同分享喜悦。
 
-代码如下：
-```python
-def Solution():
-    nums = [2,7,11,15]
-    target = 9
-    return twoSum(nums, target)
-  
-def twoSum(self, nums, target):
-    dic = dict()
-    for idx,num in enumerate(nums):
-        if target - num in dic:
-            return [dic[target - num],idx]        
-        dic[num] = idx
-```
+### Skill 2: 解决客户问题
+1. 当用户反馈问题时，应详细询问问题的情况，如何操作会产生这个问题，以了解问题的全貌。
+2. 在得到足够信息后，提供详细的解决步骤来帮助他们解决问题。
+
+### Skill 3: 提供礼貌的服务
+1. 无论任何情况下，都应保持礼貌，展示专业和尊重。
+2. 遇到问题时，应先道歉，然后提出解决方案。
+
+## Constraints
+- 你的回复只应与游戏相关的问题和答案有关。
+- 不论客人的情绪如何，都应礼貌地回复，不允许表现出任何不专业的行为。
+- 在尽量短的时间里为客户提供有效的解决方案，使他们满意。
 """
-        return description
+
+prompt = """
+Q: 我的充值金额出现了问题，我充值了50块却只显示10块钱，快帮我看看
+A: 好的，请问您方便提供下您的账号和订单号吗？
+Q: {question}
+A:
+"""
+
+question="我的账号有问题需要立刻帮我转人工"
+messages = [
+    SystemMessage(content=system_prompt),
+    HumanMessagePromptTemplate.from_template(
+        template=prompt,
+    ).format(question=question),
+]
+
+# req = chat(messages)
+# if "function_call" in req.additional_kwargs:
+#     fn_name = req.additional_kwargs["function_call"]
+#     print(fn_name)
+# print(req)
 
 
-if __name__ == "__main__":
-    python = PythonInterpreter()
-    tools = [
-        Tool(
-            name=python.get_name(),
-            func=python.get_func(),
-            description=python.get_descripte()
-        )
-    ]
+from sentence_transformers import SentenceTransformer
+from elasticsearch7 import Elasticsearch
 
-    chat = doubao.ChatSkylark(model="skylark-chat",temperature=0.01,top_k=1)
-    print(chat)
+#初始化ES Client
+# es = Elasticsearch( "https://admin:Pwd@12345@elasticsearch-lexoxskha9dichht-f1zvzj7w.escloud.volces.com:9200", verify_certs=False, ssl_show_warn=False,)
 
-    agent_tools = initialize_agent(
-        tools=tools, llm=chat, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
-        agent_kwargs={"handle_parsing_errors": True}, verbose=True)
-    question = """若 $z=-1+\sqrt{3}i$, 则 $\frac{z}{{z\overline{z}-1}}=\left(\ \ \right)$，用 Python 求解"""
-    result = agent_tools.run(question)
-    print(result)
-    question = "哪个数字是第10个斐波那契数？"
-    result = agent_tools.run(question)
-    print(result)
-    # from langchain.agents.agent_toolkits import create_python_agent
-    # from langchain.tools.python.tool import PythonREPLTool
-    # from langchain.python import PythonREPL
-    # agent_executor = create_python_agent(
-    #     llm=chat,
-    #     tool=PythonREPLTool(),
-    #     verbose=True,
-    #     agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    # )
-    # result = agent_executor.run("What is the 10th fibonacci number?")
-    # print(result)
+#加载Embedding 模型
+# from volcengine.maas import MaasService, MaasException, ChatRole
+# maas = MaasService('ml-maas-api.bytedance.net', 'cn-beijing')
+# req = {
+#     "model": {
+#         "name": "bge-large-zh",
+#         "version": "1.0", # use default version if not specified.
+#     },
+#     "input": [
+#         "天很蓝",
+#         "海很深"
+#     ]
+# }
+# resp = maas.embeddings(req)
+# print(resp)
+
+import knowledge
+kg = knowledge.MaaSKnowledgeEmbedding("bge-large-zh","1.0")
+resps = kg.encode(["天蓝","海深"])
+for resp in resps:
+    print(resp)
+
+# kg.save(system_prompt)

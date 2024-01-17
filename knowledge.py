@@ -1,3 +1,4 @@
+# coding:utf-8
 import hashlib
 from typing import List
 from volcengine.maas import MaasService, MaasException, ChatRole
@@ -14,6 +15,9 @@ class TextEmbeddingVector:
         self._text = text
         self._vector = vector
         self._id = hashlib.md5(text.encode(encoding='UTF-8')).hexdigest()
+    
+    def set_id(self, id: str):
+        self._id = id
     
     def get_id(self):
         return self._id
@@ -59,7 +63,7 @@ class VectorDB:
 
 
 class ESKnnVectorDB(VectorDB):
-    def __init__(self, url:str, table:str, embedding: MaaSKnowledgeEmbedding) -> None:
+    def __init__(self, url:str, embedding: MaaSKnowledgeEmbedding) -> None:
         '''url: http://<用户名>:<密码>@<域名/ip地址>:<端口>
         table: vector存储表,
 
@@ -70,6 +74,10 @@ class ESKnnVectorDB(VectorDB):
             hosts=[url],
             verify_certs=False, 
         )
+        self.table = "knowledge"
+        self.init_db(self.table)
+    
+    def init_db(self, table:str):
         self.table = table
         if not self.es.indices.exists(self.table):
             self.es.indices.create(
@@ -92,6 +100,8 @@ class ESKnnVectorDB(VectorDB):
                 }
             )
             self.debug_logger.debug("成功创建index: %s"%self.table)
+        else:
+            self.debug_logger.debug("index已经存在: %s"%self.table)
 
     def query(self, text: str):
         vectors = self.embedding.encode([text])
@@ -100,7 +110,6 @@ class ESKnnVectorDB(VectorDB):
     def bulk_insert(self, data: List[str])->None:
         vectors = self.embedding.encode(texts=data)
         self.bulk_insert_vector(vectors)
-
 
     def bulk_insert_vector(self, vectors: List[TextEmbeddingVector])->None:
         data = []
@@ -132,8 +141,32 @@ class ESKnnVectorDB(VectorDB):
         )
         self.debug_logger.debug(res)
         return res['hits']['hits']
+    
+    def insert(self, id:str, text:str):
+        vectors = self.embedding.encode(texts=[text])
+        self.insert_vector(id=id, vector=vectors[0])
+    
+    def insert_vector(self, id:str, vector: TextEmbeddingVector):
+        doc = {
+            KG_FIELD_TEXT: vector.get_text(),
+            KG_FIELD_VECTOR: vector.get_vector(), 
+        }
+        self.es.create(index=self.table, id=id, body=doc)
+    
+    def update(self, id:str, text:str):
+        vectors = self.embedding.encode(texts=[text])
+        self.update_vector(id=id, vector=vectors[0])
+    
+    def update_vector(self, id:str, vector:TextEmbeddingVector):
+        doc = {
+            "doc": {
+                KG_FIELD_TEXT: vector.get_text(),
+                KG_FIELD_VECTOR: vector.get_vector(),
+            }
+        }
+        self.es.update(self.table, id=id,body=doc)
 
-    def delete(self):
+    def delete_all(self):
         self.es.delete_by_query(
             index=self.table,
             body={
@@ -143,19 +176,8 @@ class ESKnnVectorDB(VectorDB):
             }
         )
         self.debug_logger.debug("完成数据表(%s)的数据删除工作"%self.table)
-
-
-class KnowledgeDB:
-    def __init__(self, embedding: MaaSKnowledgeEmbedding,) -> None:
-        self.embedding = MaaSKnowledgeEmbedding
-
-    def load_and_save_data(self, filepath):
-        pass
     
-    def save_data(self, text, sep="\n"):
-        units = text.split(sep)
-        vectors = self.encode(units)
-        print(vectors)
-    
-    def similarity_search(self, text):
-        pass
+    def delete_by_id(self, id):
+        self.es.delete(index=self.table, id=id)
+
+
