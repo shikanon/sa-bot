@@ -1,5 +1,5 @@
-import  doubao
-
+import time
+import asyncio
 from langchain.prompts.chat import (
     HumanMessagePromptTemplate,
 )
@@ -9,6 +9,8 @@ from langchain.prompts import PromptTemplate
 from langchain.agents import initialize_agent, Tool
 from langchain.agents.agent_types import AgentType
 from functools import wraps
+
+import  doubao
 
 
 multi_choice_prompt = """请针对 >>> 和 <<< 中间的用户问题，选择一个适合的工具去回答他的问题，只要用A、B、C的选项字母告诉我答案。
@@ -181,9 +183,65 @@ def test_agent():
     result = agent_tools.run(user_question)
     print(result)
 
+async def test_stream_token_time():
+    messages = [
+        SystemMessage(content="你是智能客服小火"),
+        HumanMessage(content="你好呀")
+    ]
+    # 测试 skylark2-pro-4k 模型
+    chat = doubao.ChatSkylark(
+        model="skylark2-pro-4k",
+        model_version="1.100",
+        model_endpoint="mse-20231227193502-58xhk",
+        top_k=1,
+        streaming=True)
+    start = time.time()
+    async for chunk in chat.astream("你好呀，唱首歌"):
+        print(chunk.content)
+        current_time = time.time()
+        print("耗时：%f"%(current_time-start))
+    # 测试 skylark2-lite-8k 模型
+    chat = doubao.ChatSkylark(
+        model="skylark2-lite-8k",
+        top_k=1,
+        streaming=True)
+    start = time.time()
+    async for chunk in chat.astream("你好呀，唱首歌"):
+        print(chunk.content)
+        current_time = time.time()
+        print("耗时：%f"%(current_time-start))
+
+def test_frist_token():
+    from volcengine.maas import MaasService, MaasException, ChatRole
+    req = {
+        "model": {
+            "name": "skylark2-pro-4k",
+            "version": "1.100", # use default version if not specified.
+            "endpoint_id": "mse-20231227193502-58xhk",  # use default endpoint if not specified.
+        },
+        "parameters": {
+            "max_new_tokens": 2000,
+            "temperature": 0.8
+        },
+        "messages": [
+            {
+                "role": ChatRole.USER,
+                "content": "你好呀"
+            },
+        ],
+    }
+    maas = MaasService('maas-api.ml-platform-cn-beijing.volces.com', 'cn-beijing')
+    start = time.time()
+    resps = maas.stream_chat(req)
+    for resp in resps:
+        print(resp.choice.message.content)
+        current_time = time.time()
+        print("耗时：%f"%(current_time-start))
+
 
 if __name__ == "__main__":
-    test_choice()
-    test_choice_tools()
-    test_agent_prompt()
-    test_agent()
+    asyncio.run(test_stream_token_time())
+    # test_choice()
+    # test_choice_tools()
+    # test_agent_prompt()
+    # test_agent()

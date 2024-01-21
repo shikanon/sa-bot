@@ -40,6 +40,14 @@ fn = doubao.ModelFunctionClass(
     },
 )
 
+chat = doubao.ChatSkylark(
+    model="skylark2-pro-4k",
+    model_version="1.100",
+    model_endpoint="mse-20231227193502-58xhk",
+    top_k=1,
+    functions=[fn.todict()]
+    )
+
 # 回调函数具体实现，当大模型判断使用 CallHumanCustomerService 的时候会回调这个函数
 def CallHumanCustomerService(question: str):
     return "连接上10号客服...用户的问题是：%s"%question
@@ -117,7 +125,10 @@ def get_knowledge_content(req: QuestionRequest):
     else:
         kg_db.init_db("knowledge")
     similar_contents = kg_db.query(context_question)
-    similar_content = similar_contents[0]
+    if len(similar_contents) > 0:
+        similar_content = similar_contents[0]
+    else:
+        similar_content = ""
     debuglog.debug(similar_content)
     return similar_content
 
@@ -143,13 +154,6 @@ async def ask_question(req: QuestionRequest):
     debuglog.debug(knowledge_prompt)
     messages.append(knowledge_prompt)
     # 将上下文拼接后访问大模型
-    chat = doubao.ChatSkylark(
-        model="skylark2-pro-4k",
-        model_version="1.100",
-        model_endpoint="mse-20231227193502-58xhk",
-        top_k=1,
-        functions=[fn.todict()]
-        )
     result = chat(messages)
     if "function_call" in result.additional_kwargs:
         fn_name = result.additional_kwargs["function_call"]["name"]
@@ -219,10 +223,31 @@ async def debug_ask_question(req: QuestionRequest):
 # websocket的方式进行回复
 @app.websocket("/ws-chatbot")
 async def websocket_endpoint(websocket: WebSocket):
+    chat = doubao.ChatSkylark(
+        model="skylark2-pro-4k",
+        model_version="1.100",
+        model_endpoint="mse-20231227193502-58xhk",
+        top_k=1,
+        streaming=True,
+    )
     await websocket.accept()
+    history = []
     while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message text was: {data}")
+        hunman_ask_data = await websocket.receive_text()
+        messages = history
+        messages.append(HumanMessage(content=hunman_ask_data))
+        print(messages)
+        print(hunman_ask_data)
+        answer = ""
+        async for chunk in chat.astream(hunman_ask_data):
+            print(chunk)
+            if chunk.content == '':
+                continue
+            await websocket.send_text(chunk.content)
+            answer = answer + chunk.content
+        websocket.send_text('/n')
+        history.append(HumanMessage(content=hunman_ask_data))
+        history.append(AIMessage(content=answer))
 
 if __name__ == "__main__":
     import uvicorn

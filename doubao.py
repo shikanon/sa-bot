@@ -75,8 +75,8 @@ class ModelFunctionClass:
 
 class ChatSkylark(BaseChatModel):
     model_name: str = Field(default="skylark-chat", alias="model")
-    model_version: str
-    model_endpoint: str
+    model_version: Optional[str] = None 
+    model_endpoint: Optional[str] = None
     """VOLC_ACCESSKEY"""
     model_ak: Optional[str] = None
     """VOLC_SECRETKEY"""
@@ -131,7 +131,7 @@ class ChatSkylark(BaseChatModel):
             },
             "messages": messages_list
         }
-        if len(self.functions) >0 :
+        if self.functions is not None and len(self.functions) >0 :
             req["functions"] = self.functions
         if self.model_version is not None:
             req["model"]["version"] = self.model_version
@@ -167,8 +167,33 @@ class ChatSkylark(BaseChatModel):
         messages: List[BaseMessage],
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        # todo: write stream chunk function
-        pass
+        param = self._create_message_dicts(messages)
+        for res in self.maas.stream_chat(param):
+            if "choice" in res:
+                content = res["choice"]["message"]["content"]
+                messagechunk = AIMessageChunk(content=content,role="assistant")
+                generation = ChatGenerationChunk(
+                    text=content,
+                    message=messagechunk,
+                    generation_info={"finish_reason": "finished"},
+                )
+                yield generation
+
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        param = self._create_message_dicts(messages)
+        for res in self.maas.stream_chat(param):
+            if "choice" in res:
+                content = res["choice"]["message"]["content"]
+                messagechunk = AIMessageChunk(content=content,role="assistant")
+                generation = ChatGenerationChunk(
+                    text=content,
+                    message=messagechunk,
+                )
+                yield generation
 
     def _generate(
         self,
@@ -215,3 +240,49 @@ class ChatSkylark(BaseChatModel):
             }
         }
         return self._create_chat_result(response_dict)
+    
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        stream: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        should_stream = stream if stream is not None else self.streaming
+        if should_stream:
+            generation: Optional[ChatGenerationChunk] = None
+            async for chunk in await self._astream(
+                messages=messages, **kwargs
+            ):
+                if generation is None:
+                    generation = chunk
+                else:
+                    generation += chunk
+            assert generation is not None
+            yield ChatResult(generations=[generation])
+        # 将统一的message转换为maas处理的参数
+        params = self._create_message_dicts(messages)
+        response = self.completion_with_retry(req=params)
+        # 由于豆包还未实现stop命令，手动实现stop命令
+        content = response.choice.message.content
+        if stop:
+            for s in stop:
+                if s in content:
+                    content = content.split(s)[0] + s
+        response_dict = {
+            "choice": {
+                "message": {
+                    "role": response.choice.message.role,
+                    "content": content,
+                    "function_call": response.choice.message.function_call,
+                },
+                "finish_reason": response.choice.finish_reason,
+            },
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens
+            }
+        }
+        yield self._create_chat_result(response_dict)
